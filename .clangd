@@ -31,6 +31,7 @@ Diagnostics:
     - typecheck_subscript_not_integer
     - flexible_array_not_at_end
     - typecheck_invalid_operands
+    - typecheck_decl_incomplete_type
     - typecheck_convert_incompatible_pointer
     - typecheck_invalid_lvalue_addrof
     - increment_decrement_enum
@@ -155,6 +156,7 @@ Diagnostics:
     - ovl_no_oper
     - typecheck_assign_const
     - fe_expected_compiler_job
+    - typecheck_decl_incomplete_type
 
   ClangTidy:
     Remove:

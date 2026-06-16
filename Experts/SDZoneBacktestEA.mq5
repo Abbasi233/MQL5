@@ -7,6 +7,7 @@
 #property strict
 
 #include <Trade/Trade.mqh>
+#include <Backtest/BacktestDbLogger.mqh>
 
 input string InpIndicatorName = "BasicS&D";
 input int    InpZoneSizePoints = 100;
@@ -32,6 +33,8 @@ input bool   InpOnePositionOnly = true;
 input bool   InpReverseOnOppositeZone = true;
 input string InpTestTag = "A_BASE";
 input bool   InpPrintDebugStats = true;
+input bool   InpEnableDbLogging = true;
+input string InpDbName = "sd_backtests.db";
 
 CTrade trade;
 int    indicatorHandle = INVALID_HANDLE;
@@ -53,6 +56,9 @@ int      statBlockedByPosition = 0;
 int      statBuyOrders = 0;
 int      statSellOrders = 0;
 int      statReversals = 0;
+
+CBacktestDbLogger dbLogger;
+string runUid = "";
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -92,6 +98,39 @@ int OnInit()
             " SLPoints=", InpSLPoints,
             " TPPoints=", InpTPPoints);
    }
+
+    if(InpEnableDbLogging)
+    {
+      if(!dbLogger.Init(InpDbName))
+      {
+         Print("DB init hatasi: ", dbLogger.LastError());
+      }
+      else
+      {
+         runUid = StringFormat("%s_%s_%I64d", InpTestTag, TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS), (long)GetTickCount64());
+         StringReplace(runUid, ":", "-");
+         StringReplace(runUid, " ", "_");
+
+         bool started = dbLogger.BeginRun(
+            runUid,
+            TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS),
+            InpTestTag,
+            "SDZoneBacktestEA",
+            _Symbol,
+            (int)_Period,
+            InpMagic,
+            InpUseTrendFilter,
+            InpOnlyFirstTouch,
+            InpUseRiskReward,
+            InpRiskReward,
+            InpSLPoints,
+            InpTPPoints
+         );
+         if(!started)
+            Print("DB BeginRun hatasi: ", dbLogger.LastError());
+      }
+    }
+
    return INIT_SUCCEEDED;
 }
 
@@ -101,11 +140,16 @@ void OnDeinit(const int reason)
    if(InpPrintDebugStats)
       PrintStats();
 
+   UpdateDbSummary();
+
    if(indicatorHandle != INVALID_HANDLE)
       IndicatorRelease(indicatorHandle);
 
    if(maHandle != INVALID_HANDLE)
       IndicatorRelease(maHandle);
+
+   if(InpEnableDbLogging)
+      dbLogger.Close();
 }
 
 //+------------------------------------------------------------------+
@@ -420,6 +464,85 @@ long ZoneKey(const double zonePrice)
       return LONG_MIN;
 
    return (long)MathRound(zonePrice / _Point);
+}
+
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+{
+   if(!InpEnableDbLogging || runUid == "")
+      return;
+
+   if(trans.type != TRADE_TRANSACTION_DEAL_ADD || trans.deal == 0)
+      return;
+
+   if(!HistoryDealSelect(trans.deal))
+      return;
+
+   string symbol = HistoryDealGetString(trans.deal, DEAL_SYMBOL);
+   if(symbol != _Symbol)
+      return;
+
+   long magic = (long)HistoryDealGetInteger(trans.deal, DEAL_MAGIC);
+   if(magic != InpMagic)
+      return;
+
+   long entryType = (long)HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+   long dealType = (long)HistoryDealGetInteger(trans.deal, DEAL_TYPE);
+   string side = (dealType == DEAL_TYPE_BUY ? "BUY" : (dealType == DEAL_TYPE_SELL ? "SELL" : "OTHER"));
+
+   bool ok = dbLogger.LogDeal(
+      runUid,
+      trans.deal,
+      (long)HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID),
+      symbol,
+      side,
+      (int)entryType,
+      HistoryDealGetDouble(trans.deal, DEAL_VOLUME),
+      HistoryDealGetDouble(trans.deal, DEAL_PRICE),
+      HistoryDealGetDouble(trans.deal, DEAL_PROFIT),
+      HistoryDealGetDouble(trans.deal, DEAL_SWAP),
+      HistoryDealGetDouble(trans.deal, DEAL_COMMISSION),
+      (datetime)HistoryDealGetInteger(trans.deal, DEAL_TIME)
+   );
+
+   if(!ok)
+      Print("DB LogDeal hatasi: ", dbLogger.LastError());
+}
+
+void UpdateDbSummary()
+{
+   if(!InpEnableDbLogging || runUid == "")
+      return;
+
+   double netProfit = TesterStatistics(STAT_PROFIT);
+   double grossProfit = TesterStatistics(STAT_GROSS_PROFIT);
+   double grossLoss = TesterStatistics(STAT_GROSS_LOSS);
+   double profitFactor = TesterStatistics(STAT_PROFIT_FACTOR);
+   double expectedPayoff = TesterStatistics(STAT_EXPECTED_PAYOFF);
+   double recoveryFactor = TesterStatistics(STAT_RECOVERY_FACTOR);
+   int totalTrades = (int)TesterStatistics(STAT_TRADES);
+   double equityDdAbs = TesterStatistics(STAT_EQUITY_DD);
+   double equityDdRel = TesterStatistics(STAT_EQUITYDD_PERCENT);
+   double balanceDdAbs = TesterStatistics(STAT_BALANCE_DD);
+   double balanceDdRel = TesterStatistics(STAT_BALANCEDD_PERCENT);
+
+   if(!dbLogger.UpdateRunSummary(
+      runUid,
+      netProfit,
+      grossProfit,
+      grossLoss,
+      profitFactor,
+      expectedPayoff,
+      recoveryFactor,
+      totalTrades,
+      equityDdAbs,
+      equityDdRel,
+      balanceDdAbs,
+      balanceDdRel))
+   {
+      Print("DB UpdateRunSummary hatasi: ", dbLogger.LastError());
+   }
 }
 
 void PrintStats()

@@ -1,11 +1,15 @@
 {
     "clangd.fallbackFlags": [
+        "-include",
+        "c:/Users/PC/.cursor/extensions/ngsoftware.mql-clangd-1.1.39-universal/files/mql_clangd_compat.h",
+        "-include",
+        "c:/Users/PC/.cursor/extensions/ngsoftware.mql-clangd-1.1.39-universal/files/mql_clangd_compat.h",
+        "-IC:/Users/PC/AppData/Roaming/MetaQuotes/Terminal/D0E8209F77C8CF37AD8BF550E51FF075/MQL5/Include",
         "-xc++",
         "-std=c++17",
         "-D__MQL__",
         "-D__MQL5__",
-        "-include",
-        "c:/Users/PC/.cursor/extensions/ngsoftware.mql-clangd-1.1.39-universal/files/mql_clangd_compat.h",
+        "-includec:/Users/PC/.cursor/extensions/ngsoftware.mql-clangd-1.1.59-universal/files/mql_clangd_compat.h",
         "-fms-extensions",
         "-fms-compatibility",
         "-ferror-limit=0",
@@ -19,7 +23,7 @@
         "-Wno-language-extension-token",
         "-Ic:/Users/PC/AppData/Roaming/MetaQuotes/Terminal/D0E8209F77C8CF37AD8BF550E51FF075/MQL5",
         "-Ic:/Users/PC/AppData/Roaming/MetaQuotes/Terminal/D0E8209F77C8CF37AD8BF550E51FF075/MQL5/Include",
-        "-IC:/Users/PC/AppData/Roaming/MetaQuotes/Terminal/D0E8209F77C8CF37AD8BF550E51FF075/MQL5/Include"
+        "-IC:/Users/PC/AppData/Local/mql-clangd/mirror/C/Users/PC/AppData/Roaming/MetaQuotes/Terminal/D0E8209F77C8CF37AD8BF550E51FF075/MQL5/Include"
     ],
     "files.associations": {
         "*.mqh": "cpp",

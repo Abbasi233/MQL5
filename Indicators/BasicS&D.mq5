@@ -15,12 +15,14 @@
 #property indicator_type1 DRAW_NONE // sadece EA için
 #property indicator_type2 DRAW_NONE
 
-input int zoneSizePoints = 100; // zone kalınlığı
-input int extendBars = 10;      // sağa uzatma
-input int mergeDistancePoints = 150; // dedupeNearbyZones=true iken kullanılır
-input bool dedupeNearbyZones = false; // true: yakın fiyatta ikinci zone çizilmez
+input int zoneSizePoints = 10;           // zone kalınlığı
+input int extendBars = 10;               // sağa uzatma
+input int mergeDistancePoints = 150;     // dedupeNearbyZones=true iken kullanılır
+input bool dedupeNearbyZones = false;    // true: yakın fiyatta ikinci zone çizilmez
 input bool mergeOverlappingZones = true; // true: MergeZones — üst üste bineni birleştirir/siler
-input int limit = 250;
+input int limit = 200;
+
+// Beklenti (Expectancy) = (Kazanma Oranı X Ortalama Kar) - (Kaybetme Oranı X Ortalama Zarar)
 
 double demandBuffer[];
 double supplyBuffer[];
@@ -59,6 +61,7 @@ int OnCalculate(const int rates_total, const int prev_calculated,
 
     if (mergeOverlappingZones)
         MergeZones();
+    
     return (rates_total);
 }
 //+------------------------------------------------------------------+
