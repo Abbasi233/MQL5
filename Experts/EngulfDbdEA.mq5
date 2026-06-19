@@ -10,12 +10,12 @@ input bool UseCandleBodyForZone = true;              // Zone'u gövde bazlı çi
 input int ExtendZoneBars = 200;                      // Zone'un sağa doğru uzayacağı mum sayısı
 input bool DrawDebugZones = false;                   // Debug zone ve ok çizimi
 
-input double InpLot = 0.10;                          // İşlem lotu
-input int InpSLPoints = 500;                         // Stop loss (point)
-input int InpTPPoints = 1000;                        // Take profit (point)
-input long InpMagic = 20260616;                      // Magic number
-input bool InpOnePositionOnly = true;                // Aynı anda tek pozisyon
-input bool InpTradeOnNewAnalysisBar = true;          // Sadece yeni analiz mumunda işlem aç
+input double InpLot = 0.10;                 // İşlem lotu
+input int InpSLPoints = 500;                // Stop loss (point)
+input int InpTPPoints = 1000;               // Take profit (point)
+input long InpMagic = 20260616;             // Magic number
+input bool InpOnePositionOnly = true;       // Aynı anda tek pozisyon
+input bool InpTradeOnNewAnalysisBar = true; // Sadece yeni analiz mumunda işlem aç
 
 const ENUM_TIMEFRAMES TimeframesToSearch[] = {PERIOD_H1, PERIOD_M30, PERIOD_M15};
 const string DbgEngulfZonePrefix = "EA_ENGULF_ZONE_";
@@ -40,8 +40,8 @@ void OnDeinit(const int reason) {
 
 void OnTick() {
     DbdSignal signal;
-    bool hasDbd = FindLatestDbdSignal(_Symbol, AnalysisTimeframe, MaxBaseCandles, UseCandleBodyForZone,
-                                      TimeframesToSearch, signal);
+    bool hasDbd = FindLatestDbdSignal(_Symbol, AnalysisTimeframe, MaxBaseCandles, TimeframesToSearch,
+                                      DefaultFormationSettings(), signal);
 
     if (hasDbd && signal.valid)
         g_lastSignal = signal;
@@ -111,15 +111,15 @@ bool OpenSell(const DbdSignal& signal) {
 }
 
 void UpdateDebugDraw(const bool hasFullDbdSignal) {
-    HtfEngulfInfo engulfs[];
-    CollectHtfEngulfs(_Symbol, AnalysisTimeframe, MaxBaseCandles, UseCandleBodyForZone, engulfs);
+    EngulfInfo engulfs[];
+    CollectHtfEngulfs(_Symbol, AnalysisTimeframe, MaxBaseCandles, engulfs);
 
     if (ArraySize(engulfs) <= 0) {
         ClearDebugObjects();
         return;
     }
 
-    HtfEngulfInfo engulf = engulfs[0];
+    EngulfInfo engulf = engulfs[0];
     DrawEngulfDebugZone(engulf);
     DrawEngulfDebugArrow(engulf);
 
@@ -142,7 +142,7 @@ void ClearDebugObjects() {
     ChartRedraw(chart_id);
 }
 
-void DrawEngulfDebugZone(const HtfEngulfInfo& engulf) {
+void DrawEngulfDebugZone(const EngulfInfo& engulf) {
     if (!engulf.found)
         return;
 
@@ -161,7 +161,7 @@ void DrawEngulfDebugZone(const HtfEngulfInfo& engulf) {
     }
 }
 
-void DrawEngulfDebugArrow(const HtfEngulfInfo& engulf) {
+void DrawEngulfDebugArrow(const EngulfInfo& engulf) {
     if (!engulf.found)
         return;
 

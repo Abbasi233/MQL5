@@ -3,10 +3,50 @@
 
 #include <CandleType.mqh>
 
-struct HtfEngulfInfo {
+struct FormationSettings {
+    int lookbackPeriod;
+    int minLookbackSamples;
+    double rangePercentile;
+    double bodyRatioPercentile;
+    int maxBaseCandles;
+};
+
+FormationSettings DefaultFormationSettings() {
+    FormationSettings settings;
+    settings.lookbackPeriod = 50;
+    settings.minLookbackSamples = 10;
+    settings.rangePercentile = 75.0;
+    settings.bodyRatioPercentile = 60.0;
+    settings.maxBaseCandles = 4;
+    return settings;
+}
+
+FormationSettings MakeFormationSettings(const int lookbackPeriod,
+                                        const int minLookbackSamples,
+                                        const double rangePercentile,
+                                        const double bodyRatioPercentile,
+                                        const int maxBaseCandles) {
+    FormationSettings settings;
+    settings.lookbackPeriod = lookbackPeriod;
+    settings.minLookbackSamples = minLookbackSamples;
+    settings.rangePercentile = rangePercentile;
+    settings.bodyRatioPercentile = bodyRatioPercentile;
+    settings.maxBaseCandles = maxBaseCandles;
+    return settings;
+}
+
+enum FormationCandleType {
+    FORMATION_BASE = 0,
+    FORMATION_RALLY = 1,
+    FORMATION_DROP = -1
+};
+
+struct EngulfInfo {
     bool found;
+    int chartIndex;
     datetime barTime;
-    datetime prevBarTime;
+    datetime leftBarTime;
+    datetime rightBarTime;
     double zoneHigh;
     double zoneLow;
 };
@@ -22,7 +62,7 @@ struct DbdSignal {
     ENUM_TIMEFRAMES analysisTimeframe;
     ENUM_TIMEFRAMES dbdTimeframe;
     datetime engulfBarTime;
-    datetime engulfPrevBarTime;
+    datetime engulfLeftBarTime;
     double engulfZoneHigh;
     double engulfZoneLow;
     datetime baseStartTime;
@@ -31,13 +71,15 @@ struct DbdSignal {
     double baseLow;
 };
 
-HtfEngulfInfo EmptyHtfEngulfInfo() {
-    HtfEngulfInfo info;
+EngulfInfo EmptyHtfEngulfInfo() {
+    EngulfInfo info;
     info.found = false;
+    info.chartIndex = -1;
     info.barTime = 0;
-    info.prevBarTime = 0;
+    info.leftBarTime = 0;
     info.zoneHigh = 0;
     info.zoneLow = 0;
+    info.rightBarTime = 0;
     return info;
 }
 
@@ -55,7 +97,7 @@ DbdSignal EmptyDbdSignal() {
     signal.analysisTimeframe = PERIOD_CURRENT;
     signal.dbdTimeframe = PERIOD_CURRENT;
     signal.engulfBarTime = 0;
-    signal.engulfPrevBarTime = 0;
+    signal.engulfLeftBarTime = 0;
     signal.engulfZoneHigh = 0;
     signal.engulfZoneLow = 0;
     signal.baseStartTime = 0;
@@ -65,7 +107,7 @@ DbdSignal EmptyDbdSignal() {
     return signal;
 }
 
-void AppendEngulf(HtfEngulfInfo& engulfs[], const HtfEngulfInfo& info) {
+void AppendEngulf(EngulfInfo& engulfs[], const EngulfInfo& info) {
     int size = ArraySize(engulfs);
     ArrayResize(engulfs, size + 1);
     engulfs[size] = info;
@@ -99,13 +141,12 @@ bool CopyHtfRates(const string symbol,
     return true;
 }
 
-HtfEngulfInfo DetectBearishEngulfAt(const int i,
+EngulfInfo DetectBearishEngulfAt(const int i,
                                     const double& htf_open[],
                                     const double& htf_high[],
                                     const double& htf_low[],
                                     const double& htf_close[],
-                                    const datetime& htf_time[],
-                                    const bool useCandleBodyForZone) {
+                                    const datetime& htf_time[]) {
     CandleType currentType = UpOrDown(htf_open[i], htf_close[i]);
     CandleType previousType = UpOrDown(htf_open[i + 1], htf_close[i + 1]);
     if (currentType == UP)
@@ -123,13 +164,14 @@ HtfEngulfInfo DetectBearishEngulfAt(const int i,
     double previousLow = htf_low[i + 1];
 
     if (currentOpen >= previousClose && currentClose < previousLow && currentHigh > previousHigh) {
-        double zoneHigh = useCandleBodyForZone ? MathMax(htf_open[i], htf_close[i]) : htf_high[i];
-        double zoneLow = useCandleBodyForZone ? MathMin(htf_open[i], htf_close[i]) : htf_low[i];
+        double zoneHigh = MathMax(htf_open[i], htf_close[i]);
+        double zoneLow = MathMin(htf_open[i], htf_close[i]);
 
-        HtfEngulfInfo info;
+        EngulfInfo info;
         info.found = true;
         info.barTime = htf_time[i];
-        info.prevBarTime = htf_time[i + 1];
+        info.leftBarTime = htf_time[i + 1];
+        info.rightBarTime = htf_time[i - 1];
         info.zoneHigh = zoneHigh;
         info.zoneLow = zoneLow;
         return info;
@@ -141,8 +183,7 @@ HtfEngulfInfo DetectBearishEngulfAt(const int i,
 void CollectHtfEngulfs(const string symbol,
                        const ENUM_TIMEFRAMES analysisTimeframe,
                        const int maxBaseCandles,
-                       const bool useCandleBodyForZone,
-                       HtfEngulfInfo& engulfs[]) {
+                       EngulfInfo& engulfs[]) {
     ArrayResize(engulfs, 0);
 
     int htf_count = maxBaseCandles + 2;
@@ -157,7 +198,7 @@ void CollectHtfEngulfs(const string symbol,
 
     int htf_end = htf_count - 2;
     for (int i = 1; i <= htf_end; i++) {
-        HtfEngulfInfo info = DetectBearishEngulfAt(i, htf_open, htf_high, htf_low, htf_close, htf_time, useCandleBodyForZone);
+        EngulfInfo info = DetectBearishEngulfAt(i, htf_open, htf_high, htf_low, htf_close, htf_time);
         if (info.found)
             AppendEngulf(engulfs, info);
     }
@@ -208,45 +249,284 @@ InnerCandlesSearchResult SearchTimeframesUntilFindInnerCandles(const string symb
     return EmptyInnerCandlesSearchResult();
 }
 
-bool ResolveDbdZone(const string symbol,
-                    const HtfEngulfInfo& engulf,
-                    const ENUM_TIMEFRAMES dbdTimeframe,
-                    DbdSignal& signal) {
-    signal = EmptyDbdSignal();
-    return false;
+double FormationPercentile(double& values[], const double pct) {
+    int count = ArraySize(values);
+    if (count <= 0)
+        return 0.0;
+
+    double sorted[];
+    ArrayResize(sorted, count);
+    ArrayCopy(sorted, values);
+    ArraySort(sorted);
+
+    int idx = (int)MathFloor((count - 1) * pct / 100.0);
+    if (idx < 0)
+        idx = 0;
+    if (idx >= count)
+        idx = count - 1;
+    return sorted[idx];
+}
+
+int CollectFormationLookbackSamples(const int i,
+                                    const int rates_total,
+                                    const MqlRates& rates[],
+                                    const FormationSettings& settings,
+                                    double& ranges[],
+                                    double& bodyRatios[]) {
+    ArrayResize(ranges, 0);
+    ArrayResize(bodyRatios, 0);
+
+    int from = MathMax(0, i - settings.lookbackPeriod);
+    for (int k = from; k < i; k++) {
+        double range = rates[k].high - rates[k].low;
+        if (range <= 0.0)
+            continue;
+
+        int size = ArraySize(ranges);
+        ArrayResize(ranges, size + 1);
+        ArrayResize(bodyRatios, size + 1);
+        ranges[size] = range;
+        bodyRatios[size] = MathAbs(rates[k].close - rates[k].open) / range;
+    }
+
+    return ArraySize(ranges);
+}
+
+FormationCandleType ClassifyFormationCandle(const int i,
+                                            const int rates_total,
+                                            const MqlRates& rates[],
+                                            const FormationSettings& settings) {
+    double range = rates[i].high - rates[i].low;
+    if (range <= 0.0)
+        return FORMATION_BASE;
+
+    double body = MathAbs(rates[i].close - rates[i].open);
+    double bodyRatio = body / range;
+
+    double ranges[];
+    double bodyRatios[];
+    int sampleCount = CollectFormationLookbackSamples(i, rates_total, rates, settings, ranges, bodyRatios);
+    if (sampleCount < settings.minLookbackSamples)
+        return FORMATION_BASE;
+
+    double rangeThreshold = FormationPercentile(ranges, settings.rangePercentile);
+    double bodyThreshold = FormationPercentile(bodyRatios, settings.bodyRatioPercentile);
+
+    bool isImpulse = (range >= rangeThreshold && bodyRatio >= bodyThreshold);
+    if (isImpulse && rates[i].close > rates[i].open)
+        return FORMATION_RALLY;
+    if (isImpulse && rates[i].close < rates[i].open)
+        return FORMATION_DROP;
+    return FORMATION_BASE;
+}
+
+bool ZonesOverlap(const double lowA, const double highA, const double lowB, const double highB) {
+    return lowA <= highB && highA >= lowB;
+}
+
+bool RightDropAlignsWithEngulf(const datetime rightBarTime,
+                               const datetime engulfBarTime,
+                               const ENUM_TIMEFRAMES analysisTimeframe) {
+    datetime engulfEnd = engulfBarTime + (datetime)PeriodSeconds(analysisTimeframe);
+    return rightBarTime >= engulfBarTime && rightBarTime < engulfEnd;
+}
+
+void CalcBaseZoneBounds(const MqlRates& rates[],
+                        const int baseStart,
+                        const int baseEnd,
+                        double& zoneHigh,
+                        double& zoneLow) {
+    zoneHigh = -DBL_MAX;
+    zoneLow = DBL_MAX;
+
+    for (int k = baseStart; k <= baseEnd; k++) {
+        double hi = MathMax(rates[k].open, rates[k].close);
+        double lo = MathMin(rates[k].open, rates[k].close);
+        if (hi > zoneHigh)
+            zoneHigh = hi;
+        if (lo < zoneLow)
+            zoneLow = lo;
+    }
+}
+
+datetime ResolveEngulfWindowEnd(const EngulfInfo& engulf, const ENUM_TIMEFRAMES analysisTimeframe) {
+    datetime windowEnd = engulf.barTime + (datetime)PeriodSeconds(analysisTimeframe);
+    if (engulf.rightBarTime > 0) {
+        datetime rightEnd = engulf.rightBarTime + (datetime)PeriodSeconds(analysisTimeframe);
+        if (rightEnd > windowEnd)
+            windowEnd = rightEnd;
+    }
+    return windowEnd;
+}
+
+bool CopyRatesInWindow(const string symbol,
+                       const ENUM_TIMEFRAMES timeframe,
+                       const datetime timeStart,
+                       const datetime timeEnd,
+                       MqlRates& rates[]) {
+    ArrayResize(rates, 0);
+    ArraySetAsSeries(rates, false);
+
+    if (timeStart <= 0 || timeEnd <= 0 || timeEnd < timeStart)
+        return false;
+
+    int copied = CopyRates(symbol, timeframe, timeStart, timeEnd, rates);
+    return copied > 0;
+}
+
+bool FindFormationSearchBounds(const MqlRates& rates[],
+                               const datetime timeStart,
+                               const datetime timeEnd,
+                               int& searchStart,
+                               int& searchEnd) {
+    int ratesTotal = ArraySize(rates);
+    searchStart = -1;
+    searchEnd = -1;
+
+    for (int i = 0; i < ratesTotal; i++) {
+        if (rates[i].time >= timeStart) {
+            searchStart = i;
+            break;
+        }
+    }
+
+    for (int i = ratesTotal - 1; i >= 0; i--) {
+        if (rates[i].time <= timeEnd) {
+            searchEnd = i;
+            break;
+        }
+    }
+
+    if (searchStart < 0 || searchEnd < 0 || searchEnd < searchStart)
+        return false;
+
+    return true;
+}
+
+bool TryFindDbdOnTimeframe(const string symbol,
+                           const EngulfInfo& engulf,
+                           const ENUM_TIMEFRAMES analysisTimeframe,
+                           const ENUM_TIMEFRAMES timeframe,
+                           const FormationSettings& settings,
+                           DbdSignal& signal) {
+    datetime timeStart = engulf.leftBarTime;
+    datetime timeEnd = ResolveEngulfWindowEnd(engulf, analysisTimeframe);
+     if (timeStart <= 0)
+        return false;
+
+    datetime lookbackStart = timeStart - (datetime)(PeriodSeconds(timeframe) * settings.lookbackPeriod);
+
+    MqlRates rates[];
+    if (!CopyRatesInWindow(symbol, timeframe, lookbackStart, timeEnd, rates))
+        return false;
+
+    int ratesTotal = ArraySize(rates);
+    int searchStart = 0;
+    int searchEnd = 0;
+    if (!FindFormationSearchBounds(rates, timeStart, timeEnd, searchStart, searchEnd))
+        return false;
+
+    if (searchEnd - searchStart < settings.maxBaseCandles + 2)
+        return false;
+
+    bool found = false;
+    DbdSignal best = EmptyDbdSignal();
+
+    for (int i = searchStart; i <= searchEnd - 2; i++) {
+        FormationCandleType left = ClassifyFormationCandle(i, ratesTotal, rates, settings);
+        if (left != FORMATION_DROP)
+            continue;
+
+        int baseStart = i + 1;
+        int baseCount = 0;
+        while (baseStart + baseCount < ratesTotal - 1 && baseCount < settings.maxBaseCandles) {
+            if (ClassifyFormationCandle(baseStart + baseCount, ratesTotal, rates, settings) != FORMATION_BASE)
+                break;
+            baseCount++;
+        }
+
+        if (baseCount <= 0)
+            continue;
+
+        int rightIndex = baseStart + baseCount;
+        if (rightIndex > searchEnd)
+            continue;
+
+        FormationCandleType right = ClassifyFormationCandle(rightIndex, ratesTotal, rates, settings);
+        if (right != FORMATION_DROP)
+            continue;
+
+        double baseHigh = 0;
+        double baseLow = 0;
+        int baseEnd = baseStart + baseCount - 1;
+        CalcBaseZoneBounds(rates, baseStart, baseEnd, baseHigh, baseLow);
+
+        if (!ZonesOverlap(engulf.zoneLow, engulf.zoneHigh, baseLow, baseHigh))
+            continue;
+
+        if (!RightDropAlignsWithEngulf(rates[rightIndex].time, engulf.barTime, analysisTimeframe))
+            continue;
+
+        best.baseStartTime = rates[baseStart].time;
+        best.baseEndTime = rates[baseEnd].time + (datetime)PeriodSeconds(timeframe);
+        best.baseHigh = baseHigh;
+        best.baseLow = baseLow;
+        best.dbdTimeframe = timeframe;
+        found = true;
+    }
+
+    if (!found)
+        return false;
+
+    signal = best;
+    return true;
 }
 
 bool FindLatestDbdSignal(const string symbol,
                          const ENUM_TIMEFRAMES analysisTimeframe,
                          const int maxBaseCandles,
-                         const bool useCandleBodyForZone,
                          const ENUM_TIMEFRAMES& timeframesToSearch[],
+                         const FormationSettings& settings,
                          DbdSignal& signal) {
     signal = EmptyDbdSignal();
 
-    HtfEngulfInfo engulfs[];
-    CollectHtfEngulfs(symbol, analysisTimeframe, maxBaseCandles, useCandleBodyForZone, engulfs);
+    EngulfInfo engulfs[];
+    CollectHtfEngulfs(symbol, analysisTimeframe, maxBaseCandles, engulfs);
 
     for (int e = 0; e < ArraySize(engulfs); e++) {
-        HtfEngulfInfo engulf = engulfs[e];
-
-        InnerCandlesSearchResult search = SearchTimeframesUntilFindInnerCandles(
-            symbol, timeframesToSearch, engulf.barTime, engulf.prevBarTime, engulf.zoneHigh, engulf.zoneLow);
-        if (!search.found)
-            continue;
+        EngulfInfo engulf = engulfs[e];
 
         DbdSignal candidate;
-        if (!ResolveDbdZone(symbol, engulf, search.timeframe, candidate))
+        if (!ResolveDbdZone(symbol, engulf, analysisTimeframe, timeframesToSearch, settings, candidate))
             continue;
 
         candidate.valid = true;
         candidate.symbol = symbol;
         candidate.analysisTimeframe = analysisTimeframe;
-        candidate.dbdTimeframe = search.timeframe;
         candidate.engulfBarTime = engulf.barTime;
-        candidate.engulfPrevBarTime = engulf.prevBarTime;
+        candidate.engulfLeftBarTime = engulf.leftBarTime;
         candidate.engulfZoneHigh = engulf.zoneHigh;
         candidate.engulfZoneLow = engulf.zoneLow;
+        signal = candidate;
+        return true;
+    }
+
+    return false;
+}
+
+bool ResolveDbdZone(const string symbol,
+                    const EngulfInfo& engulf,
+                    const ENUM_TIMEFRAMES analysisTimeframe,
+                    const ENUM_TIMEFRAMES& timeframesToSearch[],
+                    const FormationSettings& settings,
+                    DbdSignal& signal) {
+    signal = EmptyDbdSignal();
+
+    for (int i = 0; i < ArraySize(timeframesToSearch); i++) {
+        DbdSignal candidate;
+        if (!TryFindDbdOnTimeframe(symbol, engulf, analysisTimeframe, timeframesToSearch[i], settings, candidate))
+            continue;
+
         signal = candidate;
         return true;
     }
