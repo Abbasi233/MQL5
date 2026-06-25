@@ -1,14 +1,28 @@
-#property copyright "Copyright 2026, MetaQuotes Ltd."
-#property version "1.00"
-
+#define LIVELOG_REDIRECT
+#include <LiveLog.mqh>
 #include <Trade/Trade.mqh>
 #include <EngulfDbdSignal.mqh>
 
+#property copyright "Copyright 2026, MetaQuotes Ltd."
+#property link "https://www.mql5.com"
+#property version "1.00"
+
+input bool DrawZones = true;                         // Engulf ve DBD zone çizimi
 input ENUM_TIMEFRAMES AnalysisTimeframe = PERIOD_H4; // Analiz yapılacak timeframe
-input int MaxBaseCandles = 1000;                     // Max hesaplanacak mum sayısı
-input bool UseCandleBodyForZone = true;              // Zone'u gövde bazlı çiz
+input int MaxBaseCandles = 100;                      // Max hesaplanacak mum sayısı
+input int MaxEngulfCount = 3;                        // Max değerlendirilecek Engulf mum sayısı
+input int FormationLookbackPeriod = 50;              // DBD siniflandirma geriye bakis mum sayisi
+input int FormationMinLookbackSamples = 10;          // DBD siniflandirma minimum ornek sayisi
+input double FormationRangePercentile = 75.0;        // Impuls range percentile esigi
+input double FormationBodyRatioPercentile = 60.0;    // Impuls govde orani percentile esigi
+input int FormationMaxBaseCandles = 4;               // DBD base max mum sayisi
 input int ExtendZoneBars = 200;                      // Zone'un sağa doğru uzayacağı mum sayısı
-input bool DrawDebugZones = false;                   // Debug zone ve ok çizimi
+input color DbdZoneColor = clrTomato;                // DBD zone rengi
+
+const ENUM_TIMEFRAMES TimeframesToSearch[] = {PERIOD_H1, PERIOD_M30, PERIOD_M15};
+const string ZoneObjectPrefix = "ENGULF_ZONE_";
+const string EngulfArrowPrefix = "ENGULF_ARROW_";
+const string DbdZoneObjectPrefix = "ENGULF_DBD_BASE_";
 
 input double InpLot = 0.10;                 // İşlem lotu
 input int InpSLPoints = 500;                // Stop loss (point)
@@ -17,65 +31,93 @@ input long InpMagic = 20260616;             // Magic number
 input bool InpOnePositionOnly = true;       // Aynı anda tek pozisyon
 input bool InpTradeOnNewAnalysisBar = true; // Sadece yeni analiz mumunda işlem aç
 
-const ENUM_TIMEFRAMES TimeframesToSearch[] = {PERIOD_H1, PERIOD_M30, PERIOD_M15};
-const string DbgEngulfZonePrefix = "EA_ENGULF_ZONE_";
-const string DbgDbdZonePrefix = "EA_ENGULF_DBD_";
-const string DbgArrowPrefix = "EA_ENGULF_ARROW_";
-
 CTrade g_trade;
-DbdSignal g_lastSignal;
-datetime g_lastAnalysisBarTime = 0;
-datetime g_lastTradedEngulfTime = 0;
+
+EngulfInfo EngulfInfoList[];
+DbdSignal g_lastDbdSignal;
 
 int OnInit() {
     g_trade.SetExpertMagicNumber(InpMagic);
-    g_lastSignal = EmptyDbdSignal();
+
+    ArraySetAsSeries(EngulfInfoList, true);
+
+    g_lastDbdSignal = EmptyDbdSignal();
+
+    ScanHtfEngulfsRange(_Symbol, AnalysisTimeframe, MaxBaseCandles, 1, MaxBaseCandles, EngulfInfoList,
+                        MaxEngulfCount, true);
+
+    if (DrawZones)
+        DrawEngulfZoneObjects();
+    else
+        ClearEngulfZoneObjects();
+
+    Print("Engulf EA initialized on ", EnumToString(AnalysisTimeframe));
+
     return INIT_SUCCEEDED;
 }
 
 void OnDeinit(const int reason) {
-    ClearDebugObjects();
-    g_lastSignal = EmptyDbdSignal();
+    ClearEngulfZoneObjects();
+    g_lastDbdSignal = EmptyDbdSignal();
 }
 
 void OnTick() {
-    DbdSignal signal;
-    bool hasDbd = FindLatestDbdSignal(_Symbol, AnalysisTimeframe, MaxBaseCandles, TimeframesToSearch,
-                                      DefaultFormationSettings(), signal);
+    DbdSignal signal = EngulfInfoList[0].dbdSignal;
 
-    if (hasDbd && signal.valid)
-        g_lastSignal = signal;
+    for (int i = 0; i < ArraySize(EngulfInfoList); i++) {
+        EngulfInfo engulf = EngulfInfoList[i];
+    }
 
-    if (DrawDebugZones)
-        UpdateDebugDraw(hasDbd && signal.valid);
+    FormationSettings formationSettings = MakeFormationSettings(
+        FormationLookbackPeriod,
+        FormationMinLookbackSamples,
+        FormationRangePercentile,
+        FormationBodyRatioPercentile,
+        FormationMaxBaseCandles);
+
+    // bool hasDbd = ResolveFirstDbdFromInnerTimeframes(_Symbol, AnalysisTimeframe, TimeframesToSearch, formationSettings,
+    //                                                  EngulfInfoList, signal);
+
+    // if (hasDbd && signal.valid)
+    //     g_lastDbdSignal = signal;
 
     if (InpTradeOnNewAnalysisBar && !IsNewAnalysisBar())
         return;
 
-    if (!hasDbd || !signal.valid)
-        return;
+    // if (!hasDbd || !signal.valid)
+    //     return;
 
     if (InpOnePositionOnly && HasOpenPosition())
         return;
 
-    if (signal.engulfBarTime == g_lastTradedEngulfTime)
-        return;
+    // if (signal.engulfBarTime == g_lastTradedEngulfTime)
+    //     return;
 
     if (!OpenSell(signal))
         return;
 
-    g_lastTradedEngulfTime = signal.engulfBarTime;
+    // g_lastTradedEngulfTime = signal.engulfBarTime;
 }
+
+// void InitEngulfList() {
+//     int maxCalculateCandles;
+//     if (ArraySize(EngulfInfoList) > 0)
+//         maxCalculateCandles = MaxBaseCandles;
+//     else
+//         maxCalculateCandles = 2;
+
+//     ScanHtfEngulfsRange(_Symbol, AnalysisTimeframe, MaxBaseCandles, 1, 2, g_engulfList, MaxEngulfCount, false);
+// }
 
 bool IsNewAnalysisBar() {
     datetime currentBarTime = iTime(_Symbol, AnalysisTimeframe, 0);
     if (currentBarTime == 0)
         return false;
 
-    if (currentBarTime == g_lastAnalysisBarTime)
-        return false;
+    // if (currentBarTime == g_lastAnalysisBarTime)
+    //     return false;
 
-    g_lastAnalysisBarTime = currentBarTime;
+    // g_lastAnalysisBarTime = currentBarTime;
     return true;
 }
 
@@ -104,93 +146,107 @@ bool OpenSell(const DbdSignal& signal) {
     double sl = NormalizeDouble(bid + InpSLPoints * point, digits);
     double tp = NormalizeDouble(bid - InpTPPoints * point, digits);
 
-    if (signal.engulfZoneHigh > bid)
-        sl = NormalizeDouble(signal.engulfZoneHigh + 10 * point, digits);
+    // if (signal.engulfZoneHigh > bid)
+    //     sl = NormalizeDouble(signal.engulfZoneHigh + 10 * point, digits);
 
     return g_trade.Sell(InpLot, _Symbol, 0, sl, tp, "EngulfDbdEA");
 }
 
-void UpdateDebugDraw(const bool hasFullDbdSignal) {
-    EngulfInfo engulfs[];
-    CollectHtfEngulfs(_Symbol, AnalysisTimeframe, MaxBaseCandles, engulfs);
+void DrawEngulfZoneObjects() {
+    FormationSettings formationSettings = MakeFormationSettings(
+        FormationLookbackPeriod,
+        FormationMinLookbackSamples,
+        FormationRangePercentile,
+        FormationBodyRatioPercentile,
+        FormationMaxBaseCandles);
 
-    if (ArraySize(engulfs) <= 0) {
-        ClearDebugObjects();
-        return;
-    }
+    for (int i = 0; i < ArraySize(EngulfInfoList); i++) {
+        DbdSignal dbdSignal;
+        if (!ResolveDbdZone(_Symbol, EngulfInfoList[i], AnalysisTimeframe, TimeframesToSearch, formationSettings,
+                            dbdSignal))
+            continue;
 
-    EngulfInfo engulf = engulfs[0];
-    DrawEngulfDebugZone(engulf);
-    DrawEngulfDebugArrow(engulf);
-
-    if (hasFullDbdSignal && g_lastSignal.valid && g_lastSignal.baseStartTime != 0 && g_lastSignal.baseEndTime != 0)
-        DrawDbdDebugZone(g_lastSignal);
-}
-
-void ClearDebugObjects() {
-    long chart_id = ChartID();
-
-    while (ObjectsDeleteAll(chart_id, DbgEngulfZonePrefix, 0, -1) > 0) {
-    }
-
-    while (ObjectsDeleteAll(chart_id, DbgDbdZonePrefix, 0, -1) > 0) {
-    }
-
-    while (ObjectsDeleteAll(chart_id, DbgArrowPrefix, 0, -1) > 0) {
-    }
-
-    ChartRedraw(chart_id);
-}
-
-void DrawEngulfDebugZone(const EngulfInfo& engulf) {
-    if (!engulf.found)
-        return;
-
-    long chart_id = ChartID();
-    string name = DbgEngulfZonePrefix + IntegerToString((long)engulf.barTime);
-    datetime t2 = engulf.barTime + (datetime)(PeriodSeconds(AnalysisTimeframe) * ExtendZoneBars);
-
-    if (ObjectFind(chart_id, name) >= 0)
-        ObjectDelete(chart_id, name);
-
-    if (ObjectCreate(chart_id, name, OBJ_RECTANGLE, 0, engulf.barTime, engulf.zoneHigh, t2, engulf.zoneLow)) {
-        ObjectSetInteger(chart_id, name, OBJPROP_COLOR, clrSilver);
-        ObjectSetInteger(chart_id, name, OBJPROP_FILL, true);
-        ObjectSetInteger(chart_id, name, OBJPROP_BACK, true);
-        ObjectSetInteger(chart_id, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+        EngulfInfoList[i].dbdSignal = dbdSignal;
+        DrawEngulfDebugArrow(EngulfInfoList[i]);
+        DrawEngulfZone(EngulfInfoList[i]);
+        DrawDbdBaseZone(EngulfInfoList[i].barTime, EngulfInfoList[i].dbdSignal);
     }
 }
 
 void DrawEngulfDebugArrow(const EngulfInfo& engulf) {
-    if (!engulf.found)
-        return;
-
     long chart_id = ChartID();
-    string name = DbgArrowPrefix + IntegerToString((long)engulf.barTime);
+    string name = EngulfArrowPrefix + IntegerToString((long)engulf.barTime);
     double price = engulf.zoneLow - (engulf.zoneHigh - engulf.zoneLow) * 0.10;
 
     if (ObjectFind(chart_id, name) >= 0)
         ObjectDelete(chart_id, name);
 
     if (ObjectCreate(chart_id, name, OBJ_ARROW, 0, engulf.barTime, price)) {
-        ObjectSetInteger(chart_id, name, OBJPROP_ARROWCODE, 234);
+        ObjectSetInteger(chart_id, name, OBJPROP_ARROWCODE, 233);
         ObjectSetInteger(chart_id, name, OBJPROP_COLOR, clrLime);
         ObjectSetInteger(chart_id, name, OBJPROP_WIDTH, 1);
     }
 }
 
-void DrawDbdDebugZone(const DbdSignal& signal) {
+void DrawEngulfZone(const EngulfInfo& engulf) {
     long chart_id = ChartID();
-    string name = DbgDbdZonePrefix + IntegerToString((long)signal.engulfBarTime);
+    string zoneName = ZoneObjectPrefix + IntegerToString(engulf.barTime);
+    datetime t1 = engulf.barTime;
+    datetime t2 = engulf.barTime + (datetime)(PeriodSeconds(AnalysisTimeframe) * ExtendZoneBars);
 
-    if (ObjectFind(chart_id, name) >= 0)
-        ObjectDelete(chart_id, name);
+    if (ObjectFind(chart_id, zoneName) >= 0)
+        ObjectDelete(chart_id, zoneName);
 
-    if (ObjectCreate(chart_id, name, OBJ_RECTANGLE, 0, signal.baseStartTime, signal.baseHigh, signal.baseEndTime,
-                     signal.baseLow)) {
-        ObjectSetInteger(chart_id, name, OBJPROP_COLOR, clrTomato);
-        ObjectSetInteger(chart_id, name, OBJPROP_FILL, true);
-        ObjectSetInteger(chart_id, name, OBJPROP_BACK, true);
-        ObjectSetInteger(chart_id, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+    if (ObjectCreate(chart_id, zoneName, OBJ_RECTANGLE, 0, t1, engulf.zoneHigh, t2, engulf.zoneLow)) {
+        ObjectSetInteger(chart_id, zoneName, OBJPROP_COLOR, clrSilver);
+        ObjectSetInteger(chart_id, zoneName, OBJPROP_FILL, true);
+        ObjectSetInteger(chart_id, zoneName, OBJPROP_BACK, true);
+        ObjectSetInteger(chart_id, zoneName, OBJPROP_BORDER_TYPE, BORDER_FLAT);
     }
+}
+
+void DrawDbdBaseZone(const datetime engulf_bar_time, const DbdSignal& signal) {
+    if (signal.baseStartTime == 0 || signal.baseEndTime == 0)
+        return;
+
+    if (signal.baseHigh <= signal.baseLow)
+        return;
+
+    long chart_id = ChartID();
+    string zoneName = DbdZoneObjectPrefix + IntegerToString((long)engulf_bar_time);
+
+    if (ObjectFind(chart_id, zoneName) >= 0)
+        ObjectDelete(chart_id, zoneName);
+
+    datetime t1 = signal.baseStartTime;
+    datetime t2 = signal.baseStartTime + (datetime)(PeriodSeconds(AnalysisTimeframe) * ExtendZoneBars);
+
+    if (ObjectCreate(chart_id, zoneName, OBJ_RECTANGLE, 0, t1, signal.baseHigh, t2, signal.baseLow)) {
+        ObjectSetInteger(chart_id, zoneName, OBJPROP_COLOR, DbdZoneColor);
+        ObjectSetInteger(chart_id, zoneName, OBJPROP_FILL, true);
+        ObjectSetInteger(chart_id, zoneName, OBJPROP_BACK, true);
+        ObjectSetInteger(chart_id, zoneName, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+    }
+}
+
+void ClearEngulfZoneObjects() {
+    long chart_id = ChartID();
+
+    while (ObjectsDeleteAll(chart_id, ZoneObjectPrefix, 0, OBJ_RECTANGLE) > 0) {
+    }
+
+    while (ObjectsDeleteAll(chart_id, EngulfArrowPrefix, 0, OBJ_ARROW) > 0) {
+    }
+
+    while (ObjectsDeleteAll(chart_id, DbdZoneObjectPrefix, 0, OBJ_RECTANGLE) > 0) {
+    }
+
+    int total = ObjectsTotal(chart_id, 0, OBJ_RECTANGLE);
+    for (int i = total - 1; i >= 0; i--) {
+        string name = ObjectName(chart_id, i, 0, OBJ_RECTANGLE);
+        if (StringFind(name, ZoneObjectPrefix) == 0 || StringFind(name, DbdZoneObjectPrefix) == 0)
+            ObjectDelete(chart_id, name);
+    }
+
+    ChartRedraw(chart_id);
 }

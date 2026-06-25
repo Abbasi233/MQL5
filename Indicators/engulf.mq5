@@ -1,8 +1,3 @@
-//+------------------------------------------------------------------+
-//|                                                       engulf.mq5 |
-//|                                  Copyright 2026, MetaQuotes Ltd. |
-//|                                             https://www.mql5.com |
-//+------------------------------------------------------------------+
 #define LIVELOG_REDIRECT
 #include <LiveLog.mqh>
 
@@ -91,19 +86,21 @@ int OnCalculate(const int32_t rates_total,
         ArrayInitialize(EngulfBuffer, EMPTY_VALUE);
         ClearZoneObjects();
         g_lastDbdSignal = EmptyDbdSignal();
+        ArrayResize(EngulfInfoList, 0);
     }
 
     int htf_end = htf_count - 2;
-    if (prev_calculated > 0)
+    bool fullScan = (prev_calculated == 0);
+    if (!fullScan)
         htf_end = MathMin(2, htf_end);
 
     for (int i = 1; i <= htf_end; i++) {
         EngulfInfo engulf = FindAndDrawEngulfZone(i, rates_total, htf_open, htf_high, htf_low, htf_close, htf_time);
 
         if (engulf.found)
-            AppendEngulf(EngulfInfoList, engulf);
+            AppendEngulfIntoList(EngulfInfoList, engulf, MaxEngulfCount);
 
-        if (MaxEngulfCount == ArraySize(EngulfInfoList))
+        if (fullScan && ArraySize(EngulfInfoList) >= MaxEngulfCount)
             break;
     }
 

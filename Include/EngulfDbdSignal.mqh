@@ -11,16 +11,6 @@ struct FormationSettings {
     int maxBaseCandles;
 };
 
-FormationSettings DefaultFormationSettings() {
-    FormationSettings settings;
-    settings.lookbackPeriod = 50;
-    settings.minLookbackSamples = 10;
-    settings.rangePercentile = 75.0;
-    settings.bodyRatioPercentile = 60.0;
-    settings.maxBaseCandles = 4;
-    return settings;
-}
-
 FormationSettings MakeFormationSettings(const int lookbackPeriod,
                                         const int minLookbackSamples,
                                         const double rangePercentile,
@@ -41,6 +31,17 @@ enum FormationCandleType {
     FORMATION_DROP = -1
 };
 
+struct DbdSignal {
+    // bool valid;
+    // string symbol;
+    ENUM_TIMEFRAMES analysisTimeframe;
+    ENUM_TIMEFRAMES dbdTimeframe;
+    datetime baseStartTime;
+    datetime baseEndTime;
+    double baseHigh;
+    double baseLow;
+};
+
 struct EngulfInfo {
     bool found;
     int chartIndex;
@@ -49,26 +50,12 @@ struct EngulfInfo {
     datetime rightBarTime;
     double zoneHigh;
     double zoneLow;
+    DbdSignal dbdSignal;
 };
 
 struct InnerCandlesSearchResult {
     bool found;
     ENUM_TIMEFRAMES timeframe;
-};
-
-struct DbdSignal {
-    bool valid;
-    string symbol;
-    ENUM_TIMEFRAMES analysisTimeframe;
-    ENUM_TIMEFRAMES dbdTimeframe;
-    datetime engulfBarTime;
-    datetime engulfLeftBarTime;
-    double engulfZoneHigh;
-    double engulfZoneLow;
-    datetime baseStartTime;
-    datetime baseEndTime;
-    double baseHigh;
-    double baseLow;
 };
 
 EngulfInfo EmptyHtfEngulfInfo() {
@@ -92,14 +79,14 @@ InnerCandlesSearchResult EmptyInnerCandlesSearchResult() {
 
 DbdSignal EmptyDbdSignal() {
     DbdSignal signal;
-    signal.valid = false;
-    signal.symbol = "";
+    // signal.valid = false;
+    // signal.symbol = "";
     signal.analysisTimeframe = PERIOD_CURRENT;
     signal.dbdTimeframe = PERIOD_CURRENT;
-    signal.engulfBarTime = 0;
-    signal.engulfLeftBarTime = 0;
-    signal.engulfZoneHigh = 0;
-    signal.engulfZoneLow = 0;
+    // signal.engulfBarTime = 0;
+    // signal.engulfLeftBarTime = 0;
+    // signal.engulfZoneHigh = 0;
+    // signal.engulfZoneLow = 0;
     signal.baseStartTime = 0;
     signal.baseEndTime = 0;
     signal.baseHigh = 0;
@@ -107,10 +94,34 @@ DbdSignal EmptyDbdSignal() {
     return signal;
 }
 
-void AppendEngulf(EngulfInfo& engulfs[], const EngulfInfo& info) {
+void AppendEngulfToListEnd(EngulfInfo& engulfs[], const EngulfInfo& info) {
     int size = ArraySize(engulfs);
     ArrayResize(engulfs, size + 1);
     engulfs[size] = info;
+}
+
+int FindEngulfIndexByBarTime(const EngulfInfo& engulfs[], const datetime barTime) {
+    for (int i = 0; i < ArraySize(engulfs); i++) {
+        if (engulfs[i].barTime == barTime)
+            return i;
+    }
+    return -1;
+}
+
+void AppendEngulfIntoList(EngulfInfo& engulfs[], const EngulfInfo& info, const int maxEngulfCount) {
+    if (!info.found)
+        return;
+
+    int existing = FindEngulfIndexByBarTime(engulfs, info.barTime);
+    if (existing >= 0) {
+        engulfs[existing] = info;
+        return;
+    }
+
+    AppendEngulfToListEnd(engulfs, info);
+
+    if (maxEngulfCount > 0 && ArraySize(engulfs) > maxEngulfCount)
+        ArrayResize(engulfs, maxEngulfCount);
 }
 
 bool CopyHtfRates(const string symbol,
@@ -142,13 +153,17 @@ bool CopyHtfRates(const string symbol,
 }
 
 EngulfInfo DetectBearishEngulfAt(const int i,
-                                    const double& htf_open[],
-                                    const double& htf_high[],
-                                    const double& htf_low[],
-                                    const double& htf_close[],
-                                    const datetime& htf_time[]) {
+                                 const double& htf_open[],
+                                 const double& htf_high[],
+                                 const double& htf_low[],
+                                 const double& htf_close[],
+                                 const datetime& htf_time[]) {
     CandleType currentType = UpOrDown(htf_open[i], htf_close[i]);
+    datetime currentTime = htf_time[i];
+
     CandleType previousType = UpOrDown(htf_open[i + 1], htf_close[i + 1]);
+    datetime previousTime = htf_time[i + 1];
+
     if (currentType == UP)
         return EmptyHtfEngulfInfo();
 
@@ -180,28 +195,49 @@ EngulfInfo DetectBearishEngulfAt(const int i,
     return EmptyHtfEngulfInfo();
 }
 
-void CollectHtfEngulfs(const string symbol,
-                       const ENUM_TIMEFRAMES analysisTimeframe,
-                       const int maxBaseCandles,
-                       EngulfInfo& engulfs[]) {
-    ArrayResize(engulfs, 0);
+bool ScanHtfEngulfsRange(const string symbol,
+                         const ENUM_TIMEFRAMES analysisTimeframe,
+                         const int maxBaseCandles,
+                         const int iStart,
+                         const int iEnd,
+                         EngulfInfo& engulfs[],
+                         const int maxEngulfCount,
+                         const bool stopWhenFull) {
 
-    int htf_count = maxBaseCandles + 2;
     double htf_open[];
     double htf_high[];
     double htf_low[];
     double htf_close[];
     datetime htf_time[];
+    int htf_count = maxBaseCandles + 2;
 
     if (!CopyHtfRates(symbol, analysisTimeframe, htf_count, htf_open, htf_high, htf_low, htf_close, htf_time))
-        return;
+        return false;
 
     int htf_end = htf_count - 2;
-    for (int i = 1; i <= htf_end; i++) {
+    int scanEnd = MathMin(iEnd, htf_end);
+    if (iStart > scanEnd)
+        return true;
+
+    for (int i = iStart; i <= scanEnd; i++) {
         EngulfInfo info = DetectBearishEngulfAt(i, htf_open, htf_high, htf_low, htf_close, htf_time);
         if (info.found)
-            AppendEngulf(engulfs, info);
+            AppendEngulfIntoList(engulfs, info, maxEngulfCount);
+
+        if (stopWhenFull && maxEngulfCount > 0 && ArraySize(engulfs) >= maxEngulfCount)
+            break;
     }
+
+    return true;
+}
+
+void CollectHtfEngulfs(const string symbol,
+                       const ENUM_TIMEFRAMES analysisTimeframe,
+                       const int maxBaseCandles,
+                       EngulfInfo& engulfs[],
+                       const int maxEngulfCount) {
+    ArrayResize(engulfs, 0);
+    ScanHtfEngulfsRange(symbol, analysisTimeframe, maxBaseCandles, 1, maxBaseCandles, engulfs, maxEngulfCount, true);
 }
 
 int CountInnerCandlesInZone(const string symbol,
@@ -403,6 +439,49 @@ bool FindFormationSearchBounds(const MqlRates& rates[],
     return true;
 }
 
+bool ResolveFirstDbdFromInnerTimeframes(const string symbol,
+                                        const ENUM_TIMEFRAMES analysisTimeframe,
+                                        const ENUM_TIMEFRAMES& timeframesToSearch[],
+                                        const FormationSettings& settings,
+                                        const EngulfInfo& engulfs[],
+                                        DbdSignal& signal) {
+    signal = EmptyDbdSignal();
+
+    for (int e = 0; e < ArraySize(engulfs); e++) {
+        EngulfInfo engulf = engulfs[e];
+
+        DbdSignal candidate;
+        if (!ResolveDbdZone(symbol, engulf, analysisTimeframe, timeframesToSearch, settings, candidate))
+            continue;
+
+        // candidate.valid = true;
+        // candidate.symbol = symbol;
+        candidate.analysisTimeframe = analysisTimeframe;
+        signal = candidate;
+        return true;
+    }
+
+    return false;
+}
+
+bool ResolveDbdZone(const string symbol,
+                    const EngulfInfo& engulf,
+                    const ENUM_TIMEFRAMES analysisTimeframe,
+                    const ENUM_TIMEFRAMES& timeframesToSearch[],
+                    const FormationSettings& settings,
+                    DbdSignal& signal) {
+    for (int i = 0; i < ArraySize(timeframesToSearch); i++) {
+        DbdSignal candidate;
+        if (!TryFindDbdOnTimeframe(symbol, engulf, analysisTimeframe, timeframesToSearch[i], settings, candidate))
+            continue;
+
+        signal = candidate;
+        return true;
+    }
+
+    return false;
+}
+
 bool TryFindDbdOnTimeframe(const string symbol,
                            const EngulfInfo& engulf,
                            const ENUM_TIMEFRAMES analysisTimeframe,
@@ -411,7 +490,7 @@ bool TryFindDbdOnTimeframe(const string symbol,
                            DbdSignal& signal) {
     datetime timeStart = engulf.leftBarTime;
     datetime timeEnd = ResolveEngulfWindowEnd(engulf, analysisTimeframe);
-     if (timeStart <= 0)
+    if (timeStart <= 0)
         return false;
 
     datetime lookbackStart = timeStart - (datetime)(PeriodSeconds(timeframe) * settings.lookbackPeriod);
@@ -467,6 +546,7 @@ bool TryFindDbdOnTimeframe(const string symbol,
         if (!RightDropAlignsWithEngulf(rates[rightIndex].time, engulf.barTime, analysisTimeframe))
             continue;
 
+        best.analysisTimeframe = analysisTimeframe;
         best.baseStartTime = rates[baseStart].time;
         best.baseEndTime = rates[baseEnd].time + (datetime)PeriodSeconds(timeframe);
         best.baseHigh = baseHigh;
@@ -480,58 +560,6 @@ bool TryFindDbdOnTimeframe(const string symbol,
 
     signal = best;
     return true;
-}
-
-bool FindLatestDbdSignal(const string symbol,
-                         const ENUM_TIMEFRAMES analysisTimeframe,
-                         const int maxBaseCandles,
-                         const ENUM_TIMEFRAMES& timeframesToSearch[],
-                         const FormationSettings& settings,
-                         DbdSignal& signal) {
-    signal = EmptyDbdSignal();
-
-    EngulfInfo engulfs[];
-    CollectHtfEngulfs(symbol, analysisTimeframe, maxBaseCandles, engulfs);
-
-    for (int e = 0; e < ArraySize(engulfs); e++) {
-        EngulfInfo engulf = engulfs[e];
-
-        DbdSignal candidate;
-        if (!ResolveDbdZone(symbol, engulf, analysisTimeframe, timeframesToSearch, settings, candidate))
-            continue;
-
-        candidate.valid = true;
-        candidate.symbol = symbol;
-        candidate.analysisTimeframe = analysisTimeframe;
-        candidate.engulfBarTime = engulf.barTime;
-        candidate.engulfLeftBarTime = engulf.leftBarTime;
-        candidate.engulfZoneHigh = engulf.zoneHigh;
-        candidate.engulfZoneLow = engulf.zoneLow;
-        signal = candidate;
-        return true;
-    }
-
-    return false;
-}
-
-bool ResolveDbdZone(const string symbol,
-                    const EngulfInfo& engulf,
-                    const ENUM_TIMEFRAMES analysisTimeframe,
-                    const ENUM_TIMEFRAMES& timeframesToSearch[],
-                    const FormationSettings& settings,
-                    DbdSignal& signal) {
-    signal = EmptyDbdSignal();
-
-    for (int i = 0; i < ArraySize(timeframesToSearch); i++) {
-        DbdSignal candidate;
-        if (!TryFindDbdOnTimeframe(symbol, engulf, analysisTimeframe, timeframesToSearch[i], settings, candidate))
-            continue;
-
-        signal = candidate;
-        return true;
-    }
-
-    return false;
 }
 
 #endif
