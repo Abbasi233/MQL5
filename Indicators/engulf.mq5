@@ -24,6 +24,7 @@ input int FormationLookbackPeriod = 50;              // DBD siniflandirma geriye
 input int FormationMinLookbackSamples = 10;          // DBD siniflandirma minimum ornek sayisi
 input double FormationRangePercentile = 75.0;        // Impuls range percentile esigi
 input double FormationBodyRatioPercentile = 60.0;    // Impuls govde orani percentile esigi
+input double FormationBaseMaxBodyRatio = 0.5;        // DBD base max govde/range orani
 input int FormationMaxBaseCandles = 4;               // DBD base max mum sayisi
 input color DbdZoneColor = clrTomato;                // DBD zone rengi
 
@@ -32,7 +33,7 @@ const string ZoneObjectPrefix = "ENGULF_ZONE_";
 const string DbdZoneObjectPrefix = "ENGULF_DBD_BASE_";
 
 double EngulfBuffer[];
-EngulfInfo EngulfInfoList[];
+EngulfInfo HtfEngulfInfoList[];
 DbdSignal g_lastDbdSignal;
 
 int OnInit() {
@@ -109,6 +110,7 @@ int OnCalculate(const int32_t rates_total,
         FormationMinLookbackSamples,
         FormationRangePercentile,
         FormationBodyRatioPercentile,
+        FormationBaseMaxBodyRatio,
         FormationMaxBaseCandles);
 
     for (int i = 0; i < ArraySize(EngulfInfoList); i++) {
