@@ -3,10 +3,10 @@
 #include <Library/Swing/models/SwingResult.mqh>
 
 input int FurtherCandlesCount = 3; // Dönüşleri tespit etmek için ileriye bakılacak bar sayısı
+input int SwingLineWidth = 5; // Swing çizgi kalınlığı
 input color SwingBullishColor = clrLime; // Bullish swing rengi
 input color SwingBearishColor = clrRed; // Bearish swing rengi
 input color SwingRangeColor = clrGray; // Range swing rengi
-input int SwingLineWidth = 5; // Swing çizgi kalınlığı
 
 enum SwingState {
     INITIAL,
