@@ -2,8 +2,8 @@
 #include <LiveLog.mqh>
 #include <Trade/Trade.mqh>
 
-#include <../Experts/Library/Candle.mqh>
-#include <../Experts/Library/EngulfDbdSignal.mqh>
+#include <Library/Candle.mqh>
+#include <Library/EngulfDbdSignal.mqh>
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link "https://www.mql5.com"
@@ -206,7 +206,7 @@ void FindAndDrawEngulfZones() {
         HtfEngulfInfoList[i].dbdSignal = dbdSignal;
         DrawEngulfArrow(HtfEngulfInfoList[i], EngulfArrowHtfScope, i);
         DrawEngulfZone(HtfEngulfInfoList[i]);
-        DrawDbdBaseZone(HtfEngulfInfoList[i].barTime, HtfEngulfInfoList[i].dbdSignal);
+        DrawDbdBaseZone(HtfEngulfInfoList[i]);
     }
 }
 
@@ -265,7 +265,9 @@ void DrawEngulfZone(const EngulfInfo& engulf) {
     }
 }
 
-void DrawDbdBaseZone(const datetime engulf_bar_time, const DbdSignal& signal) {
+void DrawDbdBaseZone(const EngulfInfo& engulf) {
+    const DbdSignal signal = engulf.dbdSignal;
+
     if (signal.baseStartTime == 0 || signal.baseEndTime == 0)
         return;
 
@@ -273,7 +275,7 @@ void DrawDbdBaseZone(const datetime engulf_bar_time, const DbdSignal& signal) {
         return;
 
     long chart_id = ChartID();
-    string zoneName = DbdZoneObjectPrefix + IntegerToString((long)engulf_bar_time);
+    string zoneName = DbdZoneObjectPrefix + IntegerToString((long)engulf.barTime);
 
     if (ObjectFind(chart_id, zoneName) >= 0)
         ObjectDelete(chart_id, zoneName);

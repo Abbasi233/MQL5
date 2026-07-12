@@ -1,7 +1,7 @@
 #define LIVELOG_REDIRECT
 #include <LiveLog.mqh>
 
-#include <EngulfDbdSignal.mqh>
+#include <../Experts/Library/EngulfDbdSignal.mqh>
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link "https://www.mql5.com"
@@ -33,7 +33,7 @@ const string ZoneObjectPrefix = "ENGULF_ZONE_";
 const string DbdZoneObjectPrefix = "ENGULF_DBD_BASE_";
 
 double EngulfBuffer[];
-EngulfInfo HtfEngulfInfoList[];
+EngulfInfo EngulfInfoList[];
 DbdSignal g_lastDbdSignal;
 
 int OnInit() {
@@ -73,14 +73,10 @@ int OnCalculate(const int32_t rates_total,
                 const long& volume[],
                 const int32_t& spread[]) {
 
-    double htf_open[];
-    double htf_high[];
-    double htf_low[];
-    double htf_close[];
-    datetime htf_time[];
+    Candle candles[];
     int htf_count = MaxBaseCandles + 2;
 
-    if (!CopyHtfRates(_Symbol, AnalysisTimeframe, htf_count, htf_open, htf_high, htf_low, htf_close, htf_time))
+    if (!CopyCandles(_Symbol, AnalysisTimeframe, htf_count, candles))
         return prev_calculated;
 
     if (prev_calculated == 0) {
@@ -96,7 +92,7 @@ int OnCalculate(const int32_t rates_total,
         htf_end = MathMin(2, htf_end);
 
     for (int i = 1; i <= htf_end; i++) {
-        EngulfInfo engulf = FindAndDrawEngulfZone(i, rates_total, htf_open, htf_high, htf_low, htf_close, htf_time);
+        EngulfInfo engulf = FindAndDrawEngulfZone(i, rates_total, candles);
 
         if (engulf.found)
             AppendEngulfIntoList(EngulfInfoList, engulf, MaxEngulfCount);
@@ -119,7 +115,8 @@ int OnCalculate(const int32_t rates_total,
                             dbdSignal))
             continue;
 
-        DrawDbdBaseZone(EngulfInfoList[i].barTime, dbdSignal);
+        EngulfInfoList[i].dbdSignal = dbdSignal;
+        DrawDbdBaseZone(EngulfInfoList[i]);
     }
 
     // DbdSignal signal;
@@ -131,27 +128,23 @@ int OnCalculate(const int32_t rates_total,
 
 EngulfInfo FindAndDrawEngulfZone(const int i,
                                  const int rates_total,
-                                 const double& htf_open[],
-                                 const double& htf_high[],
-                                 const double& htf_low[],
-                                 const double& htf_close[],
-                                 const datetime& htf_time[]) {
-    int chart_idx = HtfBarToChartIndex(htf_time[i], rates_total);
+                                 const Candle& candles[]) {
+    int chart_idx = HtfBarToChartIndex(candles[i].time, rates_total);
     if (chart_idx < 0)
         return EmptyHtfEngulfInfo();
 
     EngulfBuffer[chart_idx] = EMPTY_VALUE;
 
-    string zoneName = EngulfZoneNameFromTime(htf_time[i]);
-    EngulfInfo engulf = DetectBearishEngulfAt(i, htf_open, htf_high, htf_low, htf_close, htf_time);
+    string zoneName = EngulfZoneNameFromTime(candles[i].time);
+    EngulfInfo engulf = DetectBearishEngulfAt(candles[i], candles[i + 1], candles[i - 1]);
 
     if (!engulf.found) {
         ObjectDelete(ChartID(), zoneName);
         return EmptyHtfEngulfInfo();
     }
 
-    double markerOffset = (htf_high[i] - htf_low[i]) * 0.10;
-    EngulfBuffer[chart_idx] = htf_low[i] - markerOffset;
+    double markerOffset = (candles[i].high - candles[i].low) * 0.10;
+    EngulfBuffer[chart_idx] = candles[i].low - markerOffset;
     DrawEngulfZone(engulf.barTime, engulf.zoneHigh, engulf.zoneLow);
 
     return engulf;
@@ -182,7 +175,9 @@ void DrawEngulfZone(const datetime bar_time, const double zone_high, const doubl
     }
 }
 
-void DrawDbdBaseZone(const datetime engulf_bar_time, const DbdSignal& signal) {
+void DrawDbdBaseZone(const EngulfInfo& engulf) {
+    const DbdSignal signal = engulf.dbdSignal;
+
     if (signal.baseStartTime == 0 || signal.baseEndTime == 0)
         return;
 
@@ -190,7 +185,7 @@ void DrawDbdBaseZone(const datetime engulf_bar_time, const DbdSignal& signal) {
         return;
 
     long chart_id = ChartID();
-    string zoneName = DbdZoneObjectPrefix + IntegerToString((long)engulf_bar_time);
+    string zoneName = DbdZoneObjectPrefix + IntegerToString((long)engulf.barTime);
 
     if (ObjectFind(chart_id, zoneName) >= 0)
         ObjectDelete(chart_id, zoneName);

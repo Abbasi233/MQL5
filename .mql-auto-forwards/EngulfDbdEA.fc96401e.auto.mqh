@@ -20,8 +20,8 @@ bool DrawEngulfArrow(const EngulfInfo& engulf, const string scope, const int ind
 #line 251 "c:/Users/PC/AppData/Roaming/MetaQuotes/Terminal/D0E8209F77C8CF37AD8BF550E51FF075/MQL5/Experts/EngulfDbdEA.mq5"
 void DrawEngulfZone(const EngulfInfo& engulf);
 #line 268 "c:/Users/PC/AppData/Roaming/MetaQuotes/Terminal/D0E8209F77C8CF37AD8BF550E51FF075/MQL5/Experts/EngulfDbdEA.mq5"
-void DrawDbdBaseZone(const datetime engulf_bar_time, const DbdSignal& signal);
-#line 292 "c:/Users/PC/AppData/Roaming/MetaQuotes/Terminal/D0E8209F77C8CF37AD8BF550E51FF075/MQL5/Experts/EngulfDbdEA.mq5"
+void DrawDbdBaseZone(const EngulfInfo& engulf);
+#line 294 "c:/Users/PC/AppData/Roaming/MetaQuotes/Terminal/D0E8209F77C8CF37AD8BF550E51FF075/MQL5/Experts/EngulfDbdEA.mq5"
 void ClearEngulfZoneObjects();
 
 #endif
