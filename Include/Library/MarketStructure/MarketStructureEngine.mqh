@@ -1,4 +1,5 @@
 #include <Library/Candle.mqh>
+#include <Library/EventBus.mqh>
 #include <Library/Swing/models/Swing.mqh>
 
 enum MarketStructureType {
@@ -9,14 +10,16 @@ enum MarketStructureType {
 
 class MarketStructureEngine {
   private:
+    EventBus* bus;
     Swing swingList[];
 
   public:
-    MarketStructureEngine() {
+    MarketStructureEngine(EventBus& eb) {
+        bus = &eb;
     }
 
-    MarketStructureEngine(const Swing& newSwingList[]) {
-        ArrayCopy(this.swingList, newSwingList);
+    void SetSwingList(const Swing& newSwingList[]) {
+        ArrayCopy(swingList, newSwingList);
     }
 
     Candle GetLastTop() const;
@@ -24,6 +27,7 @@ class MarketStructureEngine {
 
     MarketStructureType DetectMarketStructure() const;
     bool DetectMarketBreak(const Candle& candle) const;
+    void EvaluateBreak(const Candle& candle);
 
   private:
     Swing _GetLastSwing() const {
@@ -113,4 +117,20 @@ bool MarketStructureEngine::DetectMarketBreak(const Candle& candle) const {
     }
 
     return false;
+}
+
+void MarketStructureEngine::EvaluateBreak(const Candle& candle) {
+    if (!DetectMarketBreak(candle))
+        return;
+
+    const MarketStructureType structure = DetectMarketStructure();
+    double price = candle.close;
+
+    if (structure == MARKET_BULLISH)
+        price = _GetLastBearishSwing().endCandle.low;
+    else if (structure == MARKET_BEARISH)
+        price = _GetLastBullishSwing().endCandle.high;
+
+    Event event(EVENT_BOS, price, candle.time);
+    bus.Publish(event);
 }

@@ -5,8 +5,11 @@
 //+------------------------------------------------------------------+
 #define LIVELOG_REDIRECT
 #include <LiveLog.mqh>
+#include <Library/EventBus.mqh>
 #include <Library/Swing/SwingEngine.mqh>
 #include <Library/MarketStructure/MarketStructureEngine.mqh>
+#include <Library/MarketStructure/MarketStructureListener.mqh>
+#include "MarketStructurePanel.mqh"
 
 #property copyright "Copyright 2026, MetaQuotes Ltd."
 #property link "https://www.mql5.com"
@@ -15,20 +18,36 @@
 #property indicator_buffers 0
 #property indicator_plots 0
 
-input int MaxLookbackBars = 55;
+input int MaxLookbackBars = 150;
 
+EventBus eventBus = EventBus();
 SwingEngine swingEngine = SwingEngine();
-MarketStructureEngine marketStructureEngine = MarketStructureEngine();
+MarketStructureEngine marketStructureEngine = MarketStructureEngine(eventBus);
+MarketStructurePanel panel;
+BosPrintListener bosListener = BosPrintListener();
 
 int OnInit() {
+    eventBus.Subscribe(bosListener);
+    panel.SetEventBus(eventBus);
     swingEngine.ApplyVisualInputs();
     swingEngine.ClearSwingLines(ChartID());
+
+    if (!panel.Create(0, "Market Structure", 0))
+        return (INIT_FAILED);
+    if (!panel.Run())
+        return (INIT_FAILED);
+
     return (INIT_SUCCEEDED);
 }
 
 void OnDeinit(const int reason) {
+    panel.Destroy(reason);
     swingEngine.ClearSwingLines(ChartID());
     LiveLogClose();
+}
+
+void OnChartEvent(const int id, const long& lparam, const double& dparam, const string& sparam) {
+    panel.ChartEvent(id, lparam, dparam, sparam);
 }
 
 int OnCalculate(const int rates_total, const int prev_calculated,
@@ -46,31 +65,11 @@ int OnCalculate(const int rates_total, const int prev_calculated,
     SwingResult swingResult = swingEngine.Solve(candles);
     swingEngine.DrawSwingLines(ChartID());
 
-    marketStructureEngine = MarketStructureEngine(swingResult.swingList);
+    marketStructureEngine.SetSwingList(swingResult.swingList);
 
-    Candle lastTopCandle = marketStructureEngine.GetLastTop();
-    Candle lastDeepCandle = marketStructureEngine.GetLastDeep();
-    double testClose = lastTopCandle.close;
-
-    if (prev_calculated == 0 || rates_total > prev_calculated) {
-        if (lastTopCandle.time == 0)
-            Print("LastTop: bulunamadi");
-        else
-            PrintFormat("LastTop: time=%s high=%.5f close=%.5f",
-                        TimeToString(lastTopCandle.time),
-                        lastTopCandle.high,
-                        lastTopCandle.close);
-
-        PrintFormat("Test Close: %.5f", lastTopCandle.close);
-
-        if (lastDeepCandle.time == 0)
-            Print("LastDeep: bulunamadi");
-        else
-            PrintFormat("LastDeep: time=%s low=%.5f close=%.5f",
-                        TimeToString(lastDeepCandle.time),
-                        lastDeepCandle.low,
-                        lastDeepCandle.close);
-    }
+    const int candleCount = ArraySize(candles);
+    if (candleCount > 0)
+        marketStructureEngine.EvaluateBreak(candles[candleCount - 1]);
 
     return (rates_total);
 }
