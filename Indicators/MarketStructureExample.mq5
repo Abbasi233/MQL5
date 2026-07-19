@@ -32,6 +32,10 @@ int OnInit() {
     swingEngine.ApplyVisualInputs();
     swingEngine.ClearSwingLines(ChartID());
 
+    SwingResult swingResult = swingEngine.Initialize(candles);
+    swingEngine.DrawSwingLines(ChartID());
+    marketStructureEngine.SetSwingList(swingResult.swingList);
+
     if (!panel.Create(0, "Market Structure", 0))
         return (INIT_FAILED);
     if (!panel.Run())
@@ -61,15 +65,6 @@ int OnCalculate(const int rates_total, const int prev_calculated,
     Candle candles[];
     if (!BuildCandles(rates_total, time, open, high, low, close, candles))
         return prev_calculated;
-
-    SwingResult swingResult = swingEngine.Solve(candles);
-    swingEngine.DrawSwingLines(ChartID());
-
-    marketStructureEngine.SetSwingList(swingResult.swingList);
-
-    const int candleCount = ArraySize(candles);
-    if (candleCount > 0)
-        marketStructureEngine.EvaluateBreak(candles[candleCount - 1]);
 
     return (rates_total);
 }

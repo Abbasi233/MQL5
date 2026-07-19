@@ -12,6 +12,7 @@ class MarketStructureEngine {
   private:
     EventBus* bus;
     Swing swingList[];
+    MarketStructureType CurrentMarketStructure;
 
   public:
     MarketStructureEngine(EventBus& eb) {
@@ -20,10 +21,12 @@ class MarketStructureEngine {
 
     void SetSwingList(const Swing& newSwingList[]) {
         ArrayCopy(swingList, newSwingList);
+        CurrentMarketStructure = DetectMarketStructure();
     }
 
-    Candle GetLastTop() const;
-    Candle GetLastDeep() const;
+    MarketStructureType GetCurrentMarketStructure() const {
+        return CurrentMarketStructure;
+    }
 
     MarketStructureType DetectMarketStructure() const;
     bool DetectMarketBreak(const Candle& candle) const;
@@ -69,14 +72,6 @@ class MarketStructureEngine {
         return _GetLastSwing(SwingType::BEARISH, count);
     }
 };
-
-Candle MarketStructureEngine::GetLastTop() const {
-    return _GetLastBullishSwing().endCandle;
-}
-
-Candle MarketStructureEngine::GetLastDeep() const {
-    return _GetLastBearishSwing().endCandle;
-}
 
 MarketStructureType MarketStructureEngine::DetectMarketStructure() const {
     Swing lastTop = _GetLastBullishSwing();

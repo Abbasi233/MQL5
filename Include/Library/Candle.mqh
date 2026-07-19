@@ -57,3 +57,25 @@ struct Candle {
         candles[size] = Candle(time, open, high, low, close);
     }
 };
+
+bool BuildCandles(const int rates_total,
+                  const int maxLookbackBars,
+                  const datetime& time[],
+                  const double& open[],
+                  const double& high[],
+                  const double& low[],
+                  const double& close[],
+                  Candle& candles[]) {
+    int lookbackStart = rates_total - maxLookbackBars;
+    if (lookbackStart < 0)
+        lookbackStart = 0;
+
+    ArrayResize(candles, 0);
+
+    for (int i = lookbackStart; i < rates_total; i++) {
+        Candle candle = Candle(time[i], open[i], high[i], low[i], close[i]);
+        candle.AddCandleList(candles);
+    }
+
+    return ArraySize(candles) > 1;
+}

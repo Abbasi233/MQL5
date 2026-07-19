@@ -9,7 +9,7 @@
         "-std=c++17",
         "-D__MQL__",
         "-D__MQL5__",
-        "-includec:/Users/PC/.cursor/extensions/ngsoftware.mql-clangd-1.1.62-universal/files/mql_clangd_compat.h",
+        "-includec:/Users/PC/.cursor/extensions/ngsoftware.mql-clangd-1.1.63-universal/files/mql_clangd_compat.h",
         "-fms-extensions",
         "-fms-compatibility",
         "-ferror-limit=0",
